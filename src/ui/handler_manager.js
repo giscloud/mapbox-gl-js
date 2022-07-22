@@ -6,6 +6,7 @@ import type Map from './map.js';
 import HandlerInertia from './handler_inertia.js';
 import {MapEventHandler, BlockableMapEventHandler} from './handler/map_event.js';
 import BoxZoomHandler from './handler/box_zoom.js';
+import BoxSelectHandler from './handler/box_select.js';
 import TapZoomHandler from './handler/tap_zoom.js';
 import {MousePanHandler, MouseRotateHandler, MousePitchHandler} from './handler/mouse.js';
 import TouchPanHandler from './handler/touch_pan.js';
@@ -241,6 +242,9 @@ class HandlerManager {
         const boxZoom = map.boxZoom = new BoxZoomHandler(map, options);
         this._add('boxZoom', boxZoom);
 
+        const boxSelect = map.boxSelect = new BoxSelectHandler(map, options);
+        this._add('boxSelect', boxSelect);
+
         const tapZoom = new TapZoomHandler();
         const clickZoom = new ClickZoomHandler();
         map.doubleClickZoom = new DoubleClickZoomHandler(clickZoom, tapZoom);
@@ -279,7 +283,7 @@ class HandlerManager {
         const keyboard = map.keyboard = new KeyboardHandler();
         this._add('keyboard', keyboard);
 
-        for (const name of ['boxZoom', 'doubleClickZoom', 'tapDragZoom', 'touchPitch', 'dragRotate', 'dragPan', 'touchZoomRotate', 'scrollZoom', 'keyboard']) {
+        for (const name of ['boxZoom', 'boxSelect', 'doubleClickZoom', 'tapDragZoom', 'touchPitch', 'dragRotate', 'dragPan', 'touchZoomRotate', 'scrollZoom', 'keyboard']) {
             if (options.interactive && (options: any)[name]) {
                 (map: any)[name].enable((options: any)[name]);
             }

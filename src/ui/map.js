@@ -45,6 +45,7 @@ import type {StyleImageInterface, StyleImageMetadata} from '../style/style_image
 
 import type ScrollZoomHandler from './handler/scroll_zoom.js';
 import type BoxZoomHandler from './handler/box_zoom.js';
+import type BoxSelectHandler from './handler/box_select.js';
 import type {TouchPitchHandler} from './handler/touch_zoom_rotate.js';
 import type DragRotateHandler from './handler/shim/drag_rotate.js';
 import type DragPanHandler, {DragPanOptions} from './handler/shim/drag_pan.js';
@@ -405,6 +406,8 @@ class Map extends Camera {
      * Find more details and examples using `boxZoom` in the {@link BoxZoomHandler} section.
      */
     boxZoom: BoxZoomHandler;
+
+    boxSelect: BoxSelectHandler;
 
     /**
      * The map's {@link DragRotateHandler}, which implements rotating the map while dragging with the right
