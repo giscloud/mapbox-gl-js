@@ -547,7 +547,7 @@ class SourceCache extends Evented {
         // parent or child tiles that are *already* loaded.
         const retain = this._updateRetainedTiles(idealTileIDs);
 
-        if (isRasterType(this._source.type) && idealTileIDs.length !== 0) {
+        if (!this._source.dontRetain && isRasterType(this._source.type) && idealTileIDs.length !== 0) {
             const parentsForFading: {[_: string | number]: OverscaledTileID} = {};
             const fadingTiles = {};
             const ids = Object.keys(retain);

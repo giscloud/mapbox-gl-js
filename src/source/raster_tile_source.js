@@ -20,6 +20,7 @@ import type Tile from './tile.js';
 import type {Callback} from '../types/callback.js';
 import type {Cancelable} from '../types/cancelable.js';
 import type {TextureImage} from '../render/texture.js';
+import Texture from '../render/texture.js';
 import type {
     RasterSourceSpecification,
     RasterDEMSourceSpecification
@@ -41,6 +42,7 @@ class RasterTileSource extends Evented implements Source {
     map: Map;
     tiles: Array<string>;
 
+    _hasTransition: boolean;
     _loaded: boolean;
     _options: RasterSourceSpecification | RasterDEMSourceSpecification;
     _tileJSONRequest: ?Cancelable;
@@ -58,9 +60,10 @@ class RasterTileSource extends Evented implements Source {
         this.scheme = 'xyz';
         this.tileSize = 512;
         this._loaded = false;
+        this._hasTransition = false;
 
         this._options = extend({type: 'raster'}, options);
-        extend(this, pick(options, ['url', 'scheme', 'tileSize']));
+        extend(this, pick(options, ['url', 'scheme', 'tileSize', '_loadTile','_unloadTile', '_abortTile', 'dontRetain']));
     }
 
     load() {
@@ -110,7 +113,34 @@ class RasterTileSource extends Evented implements Source {
         return !this.tileBounds || this.tileBounds.contains(tileID.canonical);
     }
 
+    renderTile(tile: Tile, img, position, isUpdate) {
+        const context = this.map.painter.context;
+        const gl = context.gl;
+        if (!isUpdate) {
+            tile.texture = this.map.painter.getTileTexture(img.width);
+        }
+        if (tile.texture) {
+            tile.texture.update(img, {useMipmap: true, premultiply:true}, position);
+        } else {
+            if (isUpdate) {
+                return;
+            }
+            tile.texture = new Texture(context, img, gl.RGBA, {useMipmap1: true, premultiply:true}, position);
+
+            tile.texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE);
+
+            if (context.extTextureFilterAnisotropic) {
+                gl.texParameterf(gl.TEXTURE_2D, context.extTextureFilterAnisotropic.TEXTURE_MAX_ANISOTROPY_EXT, context.extTextureFilterAnisotropicMax);
+            }
+        }
+        cacheEntryPossiblyAdded(this.dispatcher);
+    }
+
     loadTile(tile: Tile, callback: Callback<void>) {
+        if (this._loadTile) {
+            this._loadTile(tile, callback);
+            return;
+        }
         const use2x = browser.devicePixelRatio >= 2;
         const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme), use2x, this.tileSize);
         tile.request = getImage(this.map._requestManager.transformRequest(url, ResourceType.Tile), (error, data, cacheControl, expires) => {
@@ -153,15 +183,21 @@ class RasterTileSource extends Evented implements Source {
             delete tile.request;
         }
         callback();
+        if (this._abortTile) {
+            this._abortTile(tile);
+        }
     }
 
     unloadTile(tile: Tile, callback: Callback<void>) {
         if (tile.texture) this.map.painter.saveTileTexture(tile.texture);
         callback();
+         if (this._unloadTile) {
+            this._unloadTile(tile);
+        }
     }
 
     hasTransition(): boolean {
-        return false;
+        return this._hasTransition;
     }
 }
 
