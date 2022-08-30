@@ -787,6 +787,10 @@ class SourceCache extends Evented {
             } else {
                 this._loadTile(tile, this._tileLoaded.bind(this, tile, tileID.key, tile.state));
             }
+        } else {
+            if (this._source._onRestoreFromCache) {
+                this._source._onRestoreFromCache(tile);
+            }
         }
 
         // Impossible, but silence flow.
@@ -835,6 +839,9 @@ class SourceCache extends Evented {
 
         if (tile.hasData() && tile.state !== 'reloading') {
             this._cache.add(tile.tileID, tile, tile.getExpiryTimeout());
+            if (this._source._onStoreToCache) {
+                this._source._onStoreToCache(tile);
+            }
         } else {
             tile.aborted = true;
             this._abortTile(tile);

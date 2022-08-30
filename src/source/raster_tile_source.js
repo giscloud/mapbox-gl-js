@@ -63,7 +63,7 @@ class RasterTileSource extends Evented implements Source {
         this._hasTransition = false;
 
         this._options = extend({type: 'raster'}, options);
-        extend(this, pick(options, ['url', 'scheme', 'tileSize', '_loadTile','_unloadTile', '_abortTile', 'dontRetain']));
+        extend(this, pick(options, ['url', 'scheme', 'tileSize', '_loadTile','_unloadTile', '_abortTile', 'dontRetain', '_onRestoreFromCache', '_onStoreToCache']));
     }
 
     load() {
