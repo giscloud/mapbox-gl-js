@@ -482,6 +482,10 @@ class SourceCache extends Evented {
             }
             this._tiles = tiles;
 
+            if (this.onHandleWrapJump) {
+                this.onHandleWrapJump(wrapDelta);
+            }
+
             // Reset tile reload timers
             for (const id in this._timers) {
                 clearTimeout(this._timers[id]);
