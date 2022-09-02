@@ -63,7 +63,7 @@ class RasterTileSource extends Evented implements Source {
         this._hasTransition = false;
 
         this._options = extend({type: 'raster'}, options);
-        extend(this, pick(options, ['url', 'scheme', 'tileSize', '_loadTile','_unloadTile', '_abortTile', 'dontRetain', '_onRestoreFromCache', '_onStoreToCache']));
+        extend(this, pick(options, ['url', 'scheme', 'tileSize', '_loadTile','_unloadTile', '_abortTile', 'dontRetain', '_onRestoreFromCache', '_onStoreToCache', '_hasTile']));
     }
 
     load() {
@@ -110,6 +110,9 @@ class RasterTileSource extends Evented implements Source {
     }
 
     hasTile(tileID: OverscaledTileID): boolean {
+        if (this._hasTile) {
+            return this._hasTile(tileID);
+        }
         return !this.tileBounds || this.tileBounds.contains(tileID.canonical);
     }
 
