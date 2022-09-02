@@ -49,14 +49,12 @@ const createElevation = (func, exaggeration) => {
 };
 
 test('Map', (t) => {
-    t.beforeEach((callback) => {
+    t.beforeEach(() => {
         window.useFakeXMLHttpRequest();
-        callback();
     });
 
-    t.afterEach((callback) => {
+    t.afterEach(() => {
         window.restore();
-        callback();
     });
 
     t.test('constructor', (t) => {
@@ -341,6 +339,7 @@ test('Map', (t) => {
                 t.equal(initStyleObj.setTerrain.callCount, 1);
                 t.ok(map.style.terrain);
                 t.equal(map.getTerrain(), null);
+                t.equal(map.getStyle().terrain, undefined);
                 t.end();
             });
         });
@@ -356,6 +355,7 @@ test('Map', (t) => {
                 t.equal(initStyleObj.setTerrain.callCount, 1);
                 t.ok(map.style.terrain);
                 t.equal(map.getTerrain(), null);
+                t.equal(map.getStyle().terrain, undefined);
                 map.setZoom(12); // Above threshold for Mercator transition
                 map.once('render', () => {
                     t.notOk(map.style.terrain);
@@ -375,11 +375,13 @@ test('Map', (t) => {
                 t.equal(initStyleObj.setTerrain.callCount, 0);
                 t.notOk(map.style.terrain);
                 t.equal(map.getTerrain(), null);
+                t.equal(map.getStyle().terrain, undefined);
                 map.setZoom(3); // Below threshold for Mercator transition
                 map.once('render', () => {
                     t.equal(initStyleObj.setTerrain.callCount, 1);
                     t.ok(map.style.terrain);
                     t.equal(map.getTerrain(), null);
+                    t.equal(map.getStyle().terrain, undefined);
                     t.end();
                 });
             });
@@ -840,9 +842,8 @@ test('Map', (t) => {
 
     t.test('#isSourceLoaded', (t) => {
 
-        t.afterEach((callback) => {
+        t.afterEach(() => {
             Map.prototype._detectMissingCSS.restore();
-            callback();
         });
 
         function setupIsSourceLoaded(tileState, callback) {
@@ -1814,6 +1815,30 @@ test('Map', (t) => {
                 });
                 t.notOk(map._showingGlobe());
                 t.end();
+            });
+        });
+
+        t.test('Crossing globe-to-mercator zoom threshold sets mercator transition and calculates matrices', (t) => {
+            const map = createMap(t, {projection: 'globe'});
+
+            map.on('load', () => {
+
+                t.spy(map.transform, 'setMercatorFromTransition');
+                t.spy(map.transform, '_calcMatrices');
+
+                t.equal(map.transform.setMercatorFromTransition.callCount, 0);
+                t.equal(map.transform.mercatorFromTransition, false);
+                t.equal(map.transform._calcMatrices.callCount, 0);
+
+                map.setZoom(7);
+
+                map.once('render', () => {
+                    t.equal(map.transform.setMercatorFromTransition.callCount, 1);
+                    t.equal(map.transform.mercatorFromTransition, true);
+                    t.equal(map.transform._calcMatrices.callCount, 3);
+                    t.end();
+
+                });
             });
         });
 

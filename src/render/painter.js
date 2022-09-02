@@ -88,6 +88,7 @@ type PainterOptions = {
     showTileBoundaries: boolean,
     showTerrainWireframe: boolean,
     showQueryGeometry: boolean,
+    showTileAABBs: boolean,
     showPadding: boolean,
     rotating: boolean,
     zooming: boolean,
@@ -656,7 +657,7 @@ class Painter {
             this.terrain.postRender();
         }
 
-        if (this.options.showTileBoundaries || this.options.showQueryGeometry) {
+        if (this.options.showTileBoundaries || this.options.showQueryGeometry || this.options.showTileAABBs) {
             //Use source with highest maxzoom
             let selectedSource = null;
             const layers = values(this.style._layers);
@@ -674,8 +675,12 @@ class Painter {
                 }
 
                 Debug.run(() => {
-                    if (this.options.showQueryGeometry && selectedSource) {
+                    if (!selectedSource) return;
+                    if (this.options.showQueryGeometry) {
                         drawDebugQueryGeometry(this, selectedSource, selectedSource.getVisibleCoordinates());
+                    }
+                    if (this.options.showTileAABBs) {
+                        Debug.drawAabbs(this, selectedSource, selectedSource.getVisibleCoordinates());
                     }
                 });
             }
@@ -864,6 +869,7 @@ class Painter {
         const defines = [];
 
         if (this.terrainRenderModeElevated()) defines.push('TERRAIN');
+        if (this.transform.projection.name === 'globe') defines.push('GLOBE');
         // When terrain is active, fog is rendered as part of draping, not as part of tile
         // rendering. Removing the fog flag during tile rendering avoids additional defines.
         if (fog && !rtt && fog.getOpacity(this.transform.pitch) !== 0.0) {

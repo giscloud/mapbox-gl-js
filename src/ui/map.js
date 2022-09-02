@@ -31,8 +31,8 @@ import Marker from '../ui/marker.js';
 import EasedVariable from '../util/eased_variable.js';
 import SourceCache from '../source/source_cache.js';
 import {GLOBE_ZOOM_THRESHOLD_MAX} from '../geo/projection/globe_util.js';
-
 import {setCacheLimits} from '../util/tile_request_cache.js';
+import {Debug} from '../util/debug.js';
 
 import type {PointLike} from '@mapbox/point-geometry';
 import type {RequestTransformFunction} from '../util/mapbox.js';
@@ -340,6 +340,7 @@ class Map extends Camera {
     _showQueryGeometry: ?boolean;
     _showCollisionBoxes: ?boolean;
     _showPadding: ?boolean;
+    _showTileAABBs: ?boolean;
     _showOverdrawInspector: boolean;
     _repaint: ?boolean;
     _vertices: ?boolean;
@@ -827,6 +828,9 @@ class Map extends Camera {
      * as close as possible to the operation's request while still
      * remaining within the bounds.
      *
+     * For `mercator` projection, the viewport will be constrained to the bounds.
+     * For other projections such as `globe`, only the map center will be constrained.
+     *
      * @param {LngLatBoundsLike | null | undefined} bounds The maximum bounds to set. If `null` or `undefined` is provided, the function removes the map's maximum bounds.
      * @returns {Map} Returns itself to allow for method chaining.
      * @example
@@ -1202,7 +1206,6 @@ class Map extends Camera {
         if (projection === 'globe' && tr.zoom >= GLOBE_ZOOM_THRESHOLD_MAX) {
             tr.setMercatorFromTransition();
             projectionHasChanged = true;
-
         } else if (projection === 'mercator' && tr.zoom < GLOBE_ZOOM_THRESHOLD_MAX) {
             tr.setProjection({name: 'globe'});
             projectionHasChanged = true;
@@ -3150,6 +3153,7 @@ class Map extends Camera {
                 showTerrainWireframe: this.showTerrainWireframe,
                 showOverdrawInspector: this._showOverdrawInspector,
                 showQueryGeometry: !!this._showQueryGeometry,
+                showTileAABBs: this.showTileAABBs,
                 rotating: this.isRotating(),
                 zooming: this.isZooming(),
                 moving: this.isMoving(),
@@ -3626,7 +3630,7 @@ class Map extends Camera {
         }
     }
 
-    /*
+    /**
      * Gets and sets a Boolean indicating whether the map should color-code
      * each fragment to show how many times it has been shaded.
      * White fragments have been shaded 8 or more times.
@@ -3664,6 +3668,20 @@ class Map extends Camera {
     // show vertices
     get vertices(): boolean { return !!this._vertices; }
     set vertices(value: boolean) { this._vertices = value; this._update(); }
+
+    /**
+    * Display tile AABBs for debugging
+    *
+    * @private
+    * @type {boolean}
+    */
+    get showTileAABBs(): boolean { return !!this._showTileAABBs; }
+    set showTileAABBs(value: boolean) {
+        if (this._showTileAABBs === value) return;
+        this._showTileAABBs = value;
+        if (!value) { Debug.clearAabbs(); return; }
+        this._update();
+    }
 
     // for cache browser tests
     _setCacheLimits(limit: number, checkThreshold: number) {
