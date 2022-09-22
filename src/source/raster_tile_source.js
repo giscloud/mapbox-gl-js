@@ -126,7 +126,7 @@ class RasterTileSource extends Evented implements Source {
             if (isUpdate) {
                 return;
             }
-            tile.texture = new Texture(context, img, gl.RGBA, {useMipmap1: true, premultiply:true}, position);
+            tile.texture = new Texture(context, img, gl.RGBA, {useMipmap: true, premultiply:true}, position);
 
             tile.texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE);
 
