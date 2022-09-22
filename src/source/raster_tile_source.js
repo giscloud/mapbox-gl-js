@@ -42,7 +42,6 @@ class RasterTileSource extends Evented implements Source {
     map: Map;
     tiles: Array<string>;
 
-    _hasTransition: boolean;
     _loaded: boolean;
     _options: RasterSourceSpecification | RasterDEMSourceSpecification;
     _tileJSONRequest: ?Cancelable;
@@ -60,7 +59,6 @@ class RasterTileSource extends Evented implements Source {
         this.scheme = 'xyz';
         this.tileSize = 512;
         this._loaded = false;
-        this._hasTransition = false;
 
         this._options = extend({type: 'raster'}, options);
         extend(this, pick(options, ['url', 'scheme', 'tileSize', '_loadTile','_unloadTile', '_abortTile', 'dontRetain', '_onRestoreFromCache', '_onStoreToCache', '_hasTile']));
@@ -200,7 +198,7 @@ class RasterTileSource extends Evented implements Source {
     }
 
     hasTransition(): boolean {
-        return this._hasTransition;
+        return false;
     }
 }
 
