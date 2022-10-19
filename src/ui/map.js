@@ -27,6 +27,7 @@ import TaskQueue from '../util/task_queue.js';
 import webpSupported from '../util/webp_supported.js';
 import {PerformanceMarkers, PerformanceUtils} from '../util/performance.js';
 import Marker from '../ui/marker.js';
+import Popup from '../ui/popup.js';
 import EasedVariable from '../util/eased_variable.js';
 import SourceCache from '../source/source_cache.js';
 import {GLOBE_ZOOM_THRESHOLD_MAX} from '../geo/projection/globe_util.js';
@@ -78,7 +79,7 @@ type IControl = {
     onRemove(map: Map): void;
 
     +getDefaultPosition?: () => ControlPosition;
-    +_setLanguage?: (language: ?string) => void;
+    +_setLanguage?: (language: ?string | ?string[]) => void;
 }
 /* eslint-enable no-use-before-define */
 
@@ -255,7 +256,7 @@ const defaultOptions = {
  * @param {number} [options.pitch=0] The initial [pitch](https://docs.mapbox.com/help/glossary/camera#pitch) (tilt) of the map, measured in degrees away from the plane of the screen (0-85). If `pitch` is not specified in the constructor options, Mapbox GL JS will look for it in the map's style object. If it is not specified in the style, either, it will default to `0`.
  * @param {LngLatBoundsLike} [options.bounds=null] The initial bounds of the map. If `bounds` is specified, it overrides `center` and `zoom` constructor options.
  * @param {Object} [options.fitBoundsOptions] A {@link Map#fitBounds} options object to use _only_ when fitting the initial `bounds` provided above.
- * @param {'auto' | string} [options.language=null] A string representing the desired language used for the map's labels and UI components. Languages can only be set on Mapbox vector tile sources.
+ * @param {'auto' | string | string[]} [options.language=null] A string with a BCP 47 language tag, or an array of such strings representing the desired languages used for the map's labels and UI components. Languages can only be set on Mapbox vector tile sources.
  *   By default, GL JS will not set a language so that the language of Mapbox tiles will be determined by the vector tile source's TileJSON.
  *   Valid language strings must be a [BCP-47 language code](https://en.wikipedia.org/wiki/IETF_language_tag#List_of_subtags). Unsupported BCP-47 codes will not include any translations. Invalid codes will result in an recoverable error.
  *   If a label has no translation for the selected language, it will display in the label's local language.
@@ -370,6 +371,7 @@ class Map extends Camera {
     _domRenderTaskQueue: TaskQueue;
     _controls: Array<IControl>;
     _markers: Array<Marker>;
+    _popups: Array<Popup>;
     _logoControl: IControl;
     _mapId: number;
     _localIdeographFontFamily: string;
@@ -386,7 +388,7 @@ class Map extends Camera {
     _averageElevation: EasedVariable;
     _containerWidth: number;
     _containerHeight: number;
-    _language: ?string;
+    _language: ?string | ?string[];
     _worldview: ?string;
 
     // `_useExplicitProjection` indicates that a projection is set by a call to map.setProjection()
@@ -490,12 +492,13 @@ class Map extends Camera {
         this._crossFadingFactor = 1;
         this._collectResourceTiming = options.collectResourceTiming;
         this._optimizeForTerrain = options.optimizeForTerrain;
-        this._language = options.language === 'auto' ? window.navigator.language : options.language;
+        this._language = this._parseLanguage(options.language);
         this._worldview = options.worldview;
         this._renderTaskQueue = new TaskQueue();
         this._domRenderTaskQueue = new TaskQueue();
         this._controls = [];
         this._markers = [];
+        this._popups = [];
         this._mapId = uniqueId();
         this._locale = extend({}, defaultLocale, options.locale);
         this._clickTolerance = options.clickTolerance;
@@ -798,9 +801,6 @@ class Map extends Camera {
      * const bounds = map.getBounds();
      */
     getBounds(): LngLatBounds | null {
-        if (this.transform.projection.name === 'globe') {
-            warnOnce('Globe projection does not support getBounds API, this API may behave unexpectedly."');
-        }
         return this.transform.getBounds();
     }
 
@@ -1052,6 +1052,9 @@ class Map extends Camera {
      */
     setRenderWorldCopies(renderWorldCopies?: ?boolean): this {
         this.transform.renderWorldCopies = renderWorldCopies;
+        if (!this.transform.renderWorldCopies) {
+            this._forceMarkerAndPopupUpdate(true);
+        }
         return this._update();
     }
 
@@ -1059,19 +1062,28 @@ class Map extends Camera {
      * Returns the map's language, which is used for translating map labels and UI components.
      *
      * @private
-     * @returns {string} Returns the map's language code.
+     * @returns {undefined | string | string[]} Returns the map's language code.
      * @example
      * const language = map.getLanguage();
      */
-    getLanguage(): ?string {
+    getLanguage(): ?string | ?string[] {
         return this._language;
+    }
+
+    _parseLanguage(language?: 'auto' | ?string | ?string[]): ?string | ?string[] {
+        if (language === 'auto') return window.navigator.language;
+        if (Array.isArray(language)) return language.length === 0 ?
+            undefined :
+            language.map(l => l === 'auto' ? window.navigator.language : l);
+
+        return language;
     }
 
     /**
      * Sets the map's language, which is used for translating map labels and UI components.
      *
      * @private
-     * @param {'auto' | string} [language] A string representing the desired language used for the map's labels and UI components. Languages can only be set on Mapbox vector tile sources.
+     * @param {'auto' | string | string[]} [language] A string representing the desired language used for the map's labels and UI components. Languages can only be set on Mapbox vector tile sources.
      *  Valid language strings must be a [BCP-47 language code](https://en.wikipedia.org/wiki/IETF_language_tag#List_of_subtags). Unsupported BCP-47 codes will not include any translations. Invalid codes will result in an recoverable error.
      *  If a label has no translation for the selected language, it will display in the label's local language.
      *  If param is set to `auto`, GL JS will select a user's preferred language as determined by the browser's [`window.navigator.language`](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/language) property.
@@ -1082,13 +1094,16 @@ class Map extends Camera {
      * map.setLanguage('es');
      *
      * @example
+     * map.setLanguage(['en-GB', 'en-US']);
+     *
+     * @example
      * map.setLanguage('auto');
      *
      * @example
      * map.setLanguage();
      */
-    setLanguage(language?: 'auto' | ?string): this {
-        const newLanguage = language === 'auto' ? window.navigator.language : language;
+    setLanguage(language?: 'auto' | ?string | ?string[]): this {
+        const newLanguage = this._parseLanguage(language);
         if (!this.style || newLanguage === this._language) return this;
         this._language = newLanguage;
 
@@ -1248,6 +1263,7 @@ class Map extends Camera {
                 this.style._sourceCaches[id].clearTiles();
             }
             this._update(true);
+            this._forceMarkerAndPopupUpdate(true);
         }
 
         return this;
@@ -1736,7 +1752,7 @@ class Map extends Camera {
         }
 
         options = options || {};
-        geometry = geometry || [[0, 0], [this.transform.width, this.transform.height]];
+        geometry = geometry || [([0, 0]: PointLike), ([this.transform.width, this.transform.height]: PointLike)];
 
         return this.style.queryRenderedFeatures(geometry, options, this.transform);
     }
@@ -2918,6 +2934,17 @@ class Map extends Camera {
         }
     }
 
+    _addPopup(popup: Popup) {
+        this._popups.push(popup);
+    }
+
+    _removePopup(popup: Popup) {
+        const index = this._popups.indexOf(popup);
+        if (index !== -1) {
+            this._popups.splice(index, 1);
+        }
+    }
+
     _setupPainter() {
         const attributes = extend({}, supported.webGLContextAttributes, {
             failIfMajorPerformanceCaveat: this._failIfMajorPerformanceCaveat,
@@ -3117,8 +3144,8 @@ class Map extends Camera {
             this._updateTerrain(); // Terrain DEM source updates here and skips update in style._updateSources.
             averageElevationChanged = this._updateAverageElevation(frameStartTime);
             this.style._updateSources(this.transform);
-            // Update positions of markers on enabling/disabling terrain
-            this._forceMarkerUpdate();
+            // Update positions of markers and popups on enabling/disabling terrain
+            this._forceMarkerAndPopupUpdate();
         } else {
             averageElevationChanged = this._updateAverageElevation(frameStartTime);
         }
@@ -3249,9 +3276,20 @@ class Map extends Camera {
         }
     }
 
-    _forceMarkerUpdate() {
+    _forceMarkerAndPopupUpdate(shouldWrap?: boolean) {
         for (const marker of this._markers) {
+            // Wrap marker location when toggling to a projection without world copies
+            if (shouldWrap && !this.getRenderWorldCopies()) {
+                marker._lngLat = marker._lngLat.wrap();
+            }
             marker._update();
+        }
+        for (const popup of this._popups) {
+            // Wrap popup location when toggling to a projection without world copies and track pointer set to false
+            if (shouldWrap && !this.getRenderWorldCopies() && !popup._trackPointer) {
+                popup._lngLat = popup._lngLat.wrap();
+            }
+            popup._update();
         }
     }
 
