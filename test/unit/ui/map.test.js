@@ -439,6 +439,7 @@ test('Map', (t) => {
                     t.equal(initStyleObj.setTerrain.callCount, 1);
                     t.ok(map.style.terrain);
                     t.equal(map.getTerrain(), null);
+                    t.true(map.painter._terrain.isUsingMockSource());
                     t.equal(map.getStyle().terrain, undefined);
                     t.end();
                 });
@@ -602,6 +603,57 @@ test('Map', (t) => {
             });
 
             t.end();
+        });
+
+        t.test('Setting globe and then terrain correctly sets terrain mock source', (t) => {
+            const style = createStyle();
+            const map = createMap(t, {style, projection: 'globe'});
+            map.setZoom(3);
+            map.on('style.load', () => {
+                map.addSource('mapbox-dem', {
+                    'type': 'raster-dem',
+                    'url': 'mapbox://mapbox.terrain-rgb',
+                    'tileSize': 512,
+                    'maxzoom': 14
+                });
+                map.once('render', () => {
+                    t.true(map.painter._terrain.isUsingMockSource());
+                    map.setTerrain({'source': 'mapbox-dem'});
+                    map.once('render', () => {
+                        t.false(map.painter._terrain.isUsingMockSource());
+                        map.setTerrain(null);
+                        map.once('render', () => {
+                            t.true(map.painter._terrain.isUsingMockSource());
+                            t.end();
+                        });
+                    });
+                });
+            });
+        });
+
+        t.test('Setting terrain and then globe correctly sets terrain mock source', (t) => {
+            const style = createStyle();
+            const map = createMap(t, {style});
+            map.setZoom(3);
+            map.on('style.load', () => {
+                map.addSource('mapbox-dem', {
+                    'type': 'raster-dem',
+                    'url': 'mapbox://mapbox.terrain-rgb',
+                    'tileSize': 512,
+                    'maxzoom': 14
+                });
+                map.setTerrain({'source': 'mapbox-dem'});
+                map.once('render', () => {
+                    t.false(map.painter._terrain.isUsingMockSource());
+                    map.setProjection('globe');
+                    t.false(map.painter._terrain.isUsingMockSource());
+                    map.setTerrain(null);
+                    map.once('render', () => {
+                        t.true(map.painter._terrain.isUsingMockSource());
+                        t.end();
+                    });
+                });
+            });
         });
 
         t.test('should apply different styles when toggling setStyle (https://github.com/mapbox/mapbox-gl-js/issues/11939)', (t) => {
@@ -1369,6 +1421,46 @@ test('Map', (t) => {
             t.same(
                 toFixed(sBounds.toArray()),
                 toFixed([[ -23.3484820899, -85.0511287798 ], [ 23.3484820899, -77.6464759596]])
+            );
+
+            t.end();
+        });
+
+        t.test('globe bounds', (t) => {
+            const map = createMap(t, {zoom: 0, skipCSSStub: true});
+            const mercatorBounds = map.getBounds();
+
+            t.same(
+                toFixed(mercatorBounds.toArray()),
+                toFixed([[ -70.3125000000, -57.3265212252, ], [ 70.3125000000, 57.3265212252]])
+            );
+
+            map.setProjection('globe');
+            const globeBounds = map.getBounds();
+
+            t.same(
+                toFixed(globeBounds.toArray()),
+                toFixed([[ -73.8873304141, -73.8873304141, ], [ 73.8873304141, 73.8873304141]])
+            );
+
+            map.setBearing(80);
+            map.setCenter({lng: 0, lat: 90});
+
+            const northBounds = map.getBounds();
+            t.same(northBounds.getNorth(), 90);
+            t.same(
+                toFixed(northBounds.toArray()),
+                toFixed([[ -169.7072944003, 11.2373406095 ], [ 175.8448619060, 90 ]])
+            );
+
+            map.setBearing(180);
+            map.setCenter({lng: 0, lat: -90});
+
+            const southBounds = map.getBounds();
+            t.same(southBounds.getSouth(), -90);
+            t.same(
+                toFixed(southBounds.toArray()),
+                toFixed([[ -165.5559158623, -90 ], [ 180, -11.1637985859]])
             );
 
             t.end();
@@ -2583,6 +2675,14 @@ test('Map', (t) => {
             });
         });
 
+        t.test('can instantiate map with fallback language', (t) => {
+            const map = createMap(t, {language: ['en-GB', 'en-US']});
+            map.on('style.load', () => {
+                t.deepEqual(map.getLanguage(), ['en-GB', 'en-US']);
+                t.end();
+            });
+        });
+
         t.test('can instantiate map with the preferred language of the user', (t) => {
             const map = createMap(t, {language: 'auto'});
             map.on('style.load', () => {
@@ -2605,13 +2705,23 @@ test('Map', (t) => {
             map.on('style.load', () => {
                 map.setLanguage('es');
                 t.equal(map.getLanguage(), 'es');
+
+                map.setLanguage(['auto', 'en-GB', 'en-US']);
+                t.deepEqual(map.getLanguage(), [window.navigator.language, 'en-GB', 'en-US']);
+
+                map.setLanguage([]);
+                t.equal(map.getLanguage(), undefined);
+
                 map.setLanguage('auto');
                 t.equal(map.getLanguage(), window.navigator.language);
+
                 map.setLanguage();
                 t.equal(map.getLanguage(), undefined);
+
                 t.end();
             });
         });
+
         t.end();
     });
 
