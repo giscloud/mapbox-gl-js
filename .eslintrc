@@ -8,8 +8,11 @@
   "parserOptions": {
     "sourceType": "module",
     "requireConfigFile": false,
+    "ecmaVersion": 2016,
     "babelOptions": {
-      "presets": ["@babel/preset-flow"]
+      "parserOpts": {
+        "plugins": ["flow"]
+      }
     }
   },
   "plugins": [

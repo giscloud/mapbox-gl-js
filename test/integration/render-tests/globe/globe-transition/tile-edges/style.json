@@ -4,7 +4,6 @@
     "test": {
       "width": 640,
       "height": 512,
-      "debug": true,
       "allowed": 0.004
     }
   },

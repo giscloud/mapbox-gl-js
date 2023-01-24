@@ -4,8 +4,8 @@ import Point from '@mapbox/point-geometry';
 import SourceCache from '../source/source_cache.js';
 import {OverscaledTileID} from '../source/tile_id.js';
 import Tile from '../source/tile.js';
-import boundsAttributes from '../data/bounds_attributes.js';
-import {RasterBoundsArray, TriangleIndexArray, LineIndexArray} from '../data/array_types.js';
+import posAttributes from '../data/pos_attributes.js';
+import {TriangleIndexArray, LineIndexArray, PosArray} from '../data/array_types.js';
 import SegmentVector from '../data/segment.js';
 import Texture from '../render/texture.js';
 import Program from '../render/program.js';
@@ -27,6 +27,7 @@ import StencilMode from '../gl/stencil_mode.js';
 import {DepthStencilAttachment} from '../gl/value.js';
 import {drawTerrainRaster, drawTerrainDepth} from './draw_terrain_raster.js';
 import type RasterStyleLayer from '../style/style_layer/raster_style_layer.js';
+import type CustomStyleLayer from '../style/style_layer/custom_style_layer.js';
 import {Elevation} from './elevation.js';
 import Framebuffer from '../gl/framebuffer.js';
 import ColorMode from '../gl/color_mode.js';
@@ -40,7 +41,7 @@ import {DrapeRenderMode} from '../style/terrain.js';
 import rasterFade from '../render/raster_fade.js';
 import {create as createSource} from '../source/source.js';
 import {RGBAImage} from '../util/image.js';
-import {GLOBE_METERS_TO_ECEF} from '../geo/projection/globe_util.js';
+import {globeMetersToEcef} from '../geo/projection/globe_util.js';
 
 import type Map from '../ui/map.js';
 import type Painter from '../render/painter.js';
@@ -224,7 +225,7 @@ export class Terrain extends Elevation {
     pool: Array<FBO>;
     renderedToTile: boolean;
     _drapedRenderBatches: Array<RenderBatch>;
-    _sharedDepthStencil: WebGLRenderbuffer;
+    _sharedDepthStencil: ?WebGLRenderbuffer;
 
     _findCoveringTileCache: {[string]: {[number]: ?number}};
 
@@ -249,7 +250,7 @@ export class Terrain extends Elevation {
         // edge vertices from neighboring tiles evaluate to the same 3D point.
         const [triangleGridArray, triangleGridIndices, skirtIndicesOffset] = createGrid(GRID_DIM + 1);
         const context = painter.context;
-        this.gridBuffer = context.createVertexBuffer(triangleGridArray, boundsAttributes.members);
+        this.gridBuffer = context.createVertexBuffer(triangleGridArray, posAttributes.members);
         this.gridIndexBuffer = context.createIndexBuffer(triangleGridIndices);
         this.gridSegments = SegmentVector.simpleSegment(0, 0, triangleGridArray.length, triangleGridIndices.length);
         this.gridNoSkirtSegments = SegmentVector.simpleSegment(0, 0, triangleGridArray.length, skirtIndicesOffset);
@@ -285,9 +286,8 @@ export class Terrain extends Elevation {
      * Validate terrain and update source cache used for elevation.
      * Explicitly pass transform to update elevation (Transform.updateElevation)
      * before using transform for source cache update.
-     * cameraChanging is true when camera is zooming, panning or orbiting.
      */
-    update(style: Style, transform: Transform, cameraChanging: boolean) {
+    update(style: Style, transform: Transform, adaptCameraAltitude: boolean) {
         if (style && style.terrain) {
             if (this._style !== style) {
                 this.style = style;
@@ -324,9 +324,9 @@ export class Terrain extends Elevation {
             }
 
             updateSourceCache();
-            // Camera, when changing, gets constrained over terrain. Issue constrainCameraOverTerrain = true
-            // here to cover potential under terrain situation on data or style change.
-            transform.updateElevation(!cameraChanging);
+            // Camera gets constrained over terrain. Issue constrainCameraOverTerrain = true
+            // here to cover potential under terrain situation on data, style, or other camera changes.
+            transform.updateElevation(true, adaptCameraAltitude);
 
             // Reset tile lookup cache and update draped tiles coordinates.
             this.resetTileLookupCache(this.proxySourceCache.id);
@@ -667,7 +667,7 @@ export class Terrain extends Elevation {
             'u_tile_tr_up': (projection.upVector(id, EXTENT, 0): any),
             'u_tile_br_up': (projection.upVector(id, EXTENT, EXTENT): any),
             'u_tile_bl_up': (projection.upVector(id, 0, EXTENT): any),
-            'u_tile_up_scale': (useDenormalizedUpVectorScale ? GLOBE_METERS_TO_ECEF : projection.upVectorScale(id, tr.center.lat, tr.worldSize).metersToTile: any)
+            'u_tile_up_scale': (useDenormalizedUpVectorScale ? globeMetersToEcef(1) : projection.upVectorScale(id, tr.center.lat, tr.worldSize).metersToTile: any)
         };
     }
 
@@ -931,15 +931,15 @@ export class Terrain extends Elevation {
             }
         }
 
-        const fadingOrTransitioning = id => {
+        const isTransitioning = id => {
             const layer = this._style._layers[id];
             const isHidden = layer.isHidden(this.painter.transform.zoom);
-            const crossFade = layer.getCrossfadeParameters();
-            const isFading = !!crossFade && crossFade.t !== 1;
-            const isTransitioning = layer.hasTransition();
-            return layer.type !== 'custom' && !isHidden && (isFading || isTransitioning);
+            if (layer.type === 'custom') {
+                return !isHidden && ((layer: any): CustomStyleLayer).shouldRedrape();
+            }
+            return !isHidden && layer.hasTransition();
         };
-        return this._style.order.some(fadingOrTransitioning);
+        return this._style.order.some(isTransitioning);
     }
 
     _clearRasterFadeFromRenderCache() {
@@ -1493,8 +1493,8 @@ function sortByDistanceToCamera(tileIDs, painter) {
  * @param {number} count Count of rows and columns
  * @private
  */
-function createGrid(count: number): [RasterBoundsArray, TriangleIndexArray, number] {
-    const boundsArray = new RasterBoundsArray();
+function createGrid(count: number): [PosArray, TriangleIndexArray, number] {
+    const boundsArray = new PosArray();
     // Around the grid, add one more row/column padding for "skirt".
     const indexArray = new TriangleIndexArray();
     const size = count + 2;
@@ -1512,7 +1512,7 @@ function createGrid(count: number): [RasterBoundsArray, TriangleIndexArray, numb
             const offset = (x < 0 || x > gridBound || y < 0 || y > gridBound) ? skirtOffset : 0;
             const xi = clamp(Math.round(x), 0, EXTENT);
             const yi = clamp(Math.round(y), 0, EXTENT);
-            boundsArray.emplaceBack(xi + offset, yi, xi, yi);
+            boundsArray.emplaceBack(xi + offset, yi);
         }
     }
 

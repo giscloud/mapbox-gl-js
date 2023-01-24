@@ -77,7 +77,7 @@ export class AJAXError extends Error {
     url: string;
     constructor(message: string, status: number, url: string) {
         if (status === 401 && isMapboxHTTPURL(url)) {
-            message += ': you may have provided an invalid Mapbox access token. See https://www.mapbox.com/api-documentation/#access-tokens-and-token-scopes';
+            message += ': you may have provided an invalid Mapbox access token. See https://docs.mapbox.com/api/overview/#access-tokens-and-token-scopes';
         }
         super(message);
         this.status = status;
@@ -148,16 +148,15 @@ function makeFetchRequest(requestParameters: RequestParameters, callback: Respon
             if (response.ok) {
                 const cacheableResponse = cacheIgnoringSearch ? response.clone() : null;
                 return finishRequest(response, cacheableResponse, requestTime);
-
             } else {
                 return callback(new AJAXError(response.statusText, response.status, requestParameters.url));
             }
         }).catch(error => {
-            if (error.code === 20) {
+            if (error.name === 'AbortError') {
                 // silence expected AbortError
                 return;
             }
-            callback(new Error(error.message));
+            callback(new Error(`${error.message} ${requestParameters.url}`));
         });
     };
 
